@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+build/
+**/build/
+
+# Environment variables (NEVER commit secrets)
+.env
+**/.env
+
+# Logs
+*.log
+**/*.log
+logs/
+**/logs/
+
+# TypeScript cache
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+**/coverage/
+.nyc_output/
+
+# Docker overrides
+docker-compose.override.yml

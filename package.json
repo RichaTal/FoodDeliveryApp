@@ -1,0 +1,29 @@
+{
+  "name": "food-delivery-app",
+  "version": "1.0.0",
+  "description": "Food Delivery App Monorepo",
+  "private": true,
+  "scripts": {
+    "generate-drivers": "node scripts/generate-drivers.js",
+    "generate-restaurants": "node scripts/generate-restaurants.js",
+    "test-driver-location": "node scripts/performance-test-driver-location.js",
+    "test-menu": "node scripts/performance-test-menu.js",
+    "test-order": "node scripts/performance-test-order.js",
+    "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm run test:coverage:all",
+    "test:coverage:all": "node scripts/coverage-all.js",
+    "test:coverage:restaurant-menu": "cd services/restaurant-menu-service && npm run test:coverage",
+    "test:coverage:order": "cd services/order-service && npm run test:coverage",
+    "test:coverage:driver-location": "cd services/driver-location-service && npm run test:coverage",
+    "test:coverage:notification": "cd services/notification-service && npm run test:coverage"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.12.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.6",
+    "@types/ws": "^8.5.10"
+  }
+}

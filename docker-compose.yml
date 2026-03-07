@@ -1,0 +1,258 @@
+# version: "3.9"
+
+# ──────────────────────────────────────────────────────────────
+#  Named Network
+# ──────────────────────────────────────────────────────────────
+networks:
+  food-delivery-net:
+    driver: bridge
+
+# ──────────────────────────────────────────────────────────────
+#  Named Volumes (data survives container restarts)
+# ──────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+
+# ──────────────────────────────────────────────────────────────
+#  Services
+# ──────────────────────────────────────────────────────────────
+services:
+
+  # ── Infrastructure ─────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-all-databases.sh:/docker-entrypoint-initdb.d/01-init-all-databases.sh:ro
+      - ./infra/postgres/init-restaurant.sql:/docker-entrypoint-initdb.d/init-restaurant.sql:ro
+      - ./infra/postgres/init-driver.sql:/docker-entrypoint-initdb.d/init-driver.sql:ro
+      - ./infra/postgres/init-order.sql:/docker-entrypoint-initdb.d/init-order.sql:ro
+      - ./infra/postgres/init-notification.sql:/docker-entrypoint-initdb.d/init-notification.sql:ro
+    networks:
+      - food-delivery-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - food-delivery-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
+      RABBITMQ_DEFINITIONS_FILE: /etc/rabbitmq/definitions.json
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./infra/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    networks:
+      - food-delivery-net
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  kafka:
+    image: apache/kafka:3.7.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 6
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    networks:
+      - food-delivery-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  kafka-init:
+    image: apache/kafka:3.7.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic driver-location-events --partitions 6 --replication-factor 1 --config retention.ms=60000
+      echo 'Kafka topics created'
+      "
+    networks:
+      - food-delivery-net
+
+  # ── Application Services ────────────────────────────────────
+
+  restaurant-menu-service:
+    build:
+      context: ./services/restaurant-menu-service
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${RESTAURANT_MENU_PORT:-3001}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: restaurant_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "${RESTAURANT_MENU_PORT:-3001}:3001"
+    networks:
+      - food-delivery-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${ORDER_SERVICE_PORT:-3002}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: orders_db
+      RESTAURANT_SERVICE_URL: http://restaurant-menu-service:3001
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin123@rabbitmq:5672}
+    ports:
+      - "${ORDER_SERVICE_PORT:-3002}:3002"
+    networks:
+      - food-delivery-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  driver-location-service:
+    build:
+      context: ./services/driver-location-service
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${DRIVER_LOCATION_PORT:-3003}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: driver_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: driver-location-service
+    ports:
+      - "${DRIVER_LOCATION_PORT:-3003}:3003"
+    networks:
+      - food-delivery-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${NOTIFICATION_PORT:-3004}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin123@rabbitmq:5672}
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: notification-service
+    ports:
+      - "${NOTIFICATION_PORT:-3004}:3004"
+    networks:
+      - food-delivery-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${API_GATEWAY_PORT:-8080}
+      RESTAURANT_MENU_SERVICE_URL: http://restaurant-menu-service:3001
+      ORDER_SERVICE_URL: http://order-service:3002
+      DRIVER_LOCATION_SERVICE_URL: http://driver-location-service:3003
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
+    ports:
+      - "${API_GATEWAY_PORT:-8080}:8080"
+    networks:
+      - food-delivery-net
+    depends_on:
+      - restaurant-menu-service
+      - order-service
+      - driver-location-service
+      - notification-service
