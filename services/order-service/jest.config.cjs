@@ -6,7 +6,10 @@ module.exports = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   transform: {
     '^.+\\.ts$': ['ts-jest', {
-      tsconfig: 'tsconfig.json',
+      tsconfig: {
+        module: 'CommonJS',
+        moduleResolution: 'node',
+      },
     }],
   },
   moduleNameMapper: {
