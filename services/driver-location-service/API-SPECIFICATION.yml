@@ -1,0 +1,415 @@
+openapi: 3.0.0
+info:
+  title: Driver Location Service API
+  version: 1.0.0
+  description: |
+    REST API for real-time driver location tracking in the Food Delivery platform.
+
+    **WebSocket Endpoint:**
+    - `ws://localhost:3003/drivers/connect` — Drivers connect here to stream GPS pings via WebSocket.
+      - Messages sent: `{ driverId, orderId, lat, lng, timestamp }`
+servers:
+  - url: http://localhost:3003
+    description: Local development server
+components:
+  schemas:
+    Driver:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+        vehicle:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    DriverLocation:
+      type: object
+      properties:
+        driverId:
+          type: string
+          format: uuid
+        lat:
+          type: number
+          example: 40.7128
+        lng:
+          type: number
+          example: -74.006
+    NearbyDriver:
+      type: object
+      properties:
+        driverId:
+          type: string
+          format: uuid
+        lat:
+          type: number
+        lng:
+          type: number
+        distance:
+          type: number
+          description: Distance in km
+    PathPoint:
+      type: object
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+        timestamp:
+          type: integer
+          description: Unix timestamp in milliseconds
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+paths:
+  /drivers/{id}/location:
+    get:
+      summary: Get the current location of a driver
+      tags:
+        - Drivers
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Driver UUID
+      responses:
+        '200':
+          description: Current driver location from Redis GEO
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DriverLocation'
+        '400':
+          description: Invalid driver ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Driver is offline or not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /drivers/nearby:
+    get:
+      summary: Get drivers within a radius of a location
+      tags:
+        - Drivers
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+          description: Latitude of the search center
+        - in: query
+          name: lng
+          required: true
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+          description: Longitude of the search center
+        - in: query
+          name: radius
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            maximum: 50
+            default: 5
+          description: Search radius in kilometres (max 50, default 5)
+      responses:
+        '200':
+          description: List of nearby drivers with distance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NearbyDriver'
+                  count:
+                    type: integer
+        '400':
+          description: Missing or invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /drivers:
+    get:
+      summary: List all driver profiles (admin)
+      tags:
+        - Drivers
+      responses:
+        '200':
+          description: Array of all driver profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Driver'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /drivers/{id}/path:
+    get:
+      summary: Get GPS path history for a driver
+      tags:
+        - Drivers
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Driver UUID
+        - in: query
+          name: startTime
+          required: false
+          schema:
+            type: integer
+          description: Start of time range (Unix ms timestamp)
+        - in: query
+          name: endTime
+          required: false
+          schema:
+            type: integer
+          description: End of time range (Unix ms timestamp)
+        - in: query
+          name: source
+          required: false
+          schema:
+            type: string
+            enum:
+              - redis
+              - db
+              - both
+            default: both
+          description: |
+            Data source — redis (recent ≤2h), db (PostgreSQL long-term), both (merged & deduplicated)
+      responses:
+        '200':
+          description: Ordered array of GPS path points
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PathPoint'
+                  count:
+                    type: integer
+                  source:
+                    type: string
+                    enum:
+                      - redis
+                      - db
+                      - both
+        '400':
+          description: Invalid UUID or invalid time parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /orders/{orderId}/path:
+    get:
+      summary: Get GPS path history for an order's driver
+      tags:
+        - Orders
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Order UUID
+        - in: query
+          name: startTime
+          required: false
+          schema:
+            type: integer
+          description: Start of time range (Unix ms timestamp)
+        - in: query
+          name: endTime
+          required: false
+          schema:
+            type: integer
+          description: End of time range (Unix ms timestamp)
+        - in: query
+          name: source
+          required: false
+          schema:
+            type: string
+            enum:
+              - redis
+              - db
+              - both
+            default: both
+          description: |
+            Data source — redis (recent ≤2h), db (PostgreSQL long-term), both (merged & deduplicated)
+      responses:
+        '200':
+          description: Ordered array of GPS path points for the order's delivery route
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PathPoint'
+                  count:
+                    type: integer
+                  source:
+                    type: string
+                    enum:
+                      - redis
+                      - db
+                      - both
+        '400':
+          description: Invalid order ID or invalid time parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /drivers/{id}/status:
+    patch:
+      summary: Update driver active status
+      tags:
+        - Drivers
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Driver UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - is_active
+              properties:
+                is_active:
+                  type: boolean
+                  description: Set driver as active (true) or inactive (false)
+                  example: true
+      responses:
+        '200':
+          description: Driver status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      is_active:
+                        type: boolean
+        '400':
+          description: Invalid driver ID format or invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Driver not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: driver-location-service
+                  activeConnections:
+                    type: integer
+                    description: Number of active WebSocket driver connections
+tags: []

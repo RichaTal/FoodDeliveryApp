@@ -1,0 +1,371 @@
+openapi: 3.0.0
+info:
+  title: Restaurant Menu Service API
+  version: 1.0.0
+  description: REST API for managing restaurants and their menus in the Food Delivery platform.
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+components:
+  schemas:
+    Restaurant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        is_open:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    MenuItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        restaurant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        is_available:
+          type: boolean
+    MenuCategory:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        restaurant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        display_order:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MenuItem'
+    FullMenu:
+      type: object
+      properties:
+        restaurant:
+          $ref: '#/components/schemas/Restaurant'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/MenuCategory'
+    CreateRestaurantPayload:
+      type: object
+      required:
+        - name
+        - address
+        - lat
+        - lng
+      properties:
+        name:
+          type: string
+          example: Pizza Palace
+        address:
+          type: string
+          example: 123 Main St, Springfield
+        lat:
+          type: number
+          example: 40.7128
+        lng:
+          type: number
+          example: -74.006
+        is_open:
+          type: boolean
+          default: true
+    UpdateMenuItemPayload:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        is_available:
+          type: boolean
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+paths:
+  /restaurants/count:
+    get:
+      summary: Get the total number of restaurants
+      tags:
+        - Restaurants
+      responses:
+        '200':
+          description: Total restaurant count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 42
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /restaurants:
+    get:
+      summary: List all restaurants
+      tags:
+        - Restaurants
+      responses:
+        '200':
+          description: Array of all restaurants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Restaurant'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create a new restaurant
+      tags:
+        - Restaurants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRestaurantPayload'
+      responses:
+        '201':
+          description: Restaurant created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Restaurant'
+        '400':
+          description: Validation failed — missing or invalid fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Restaurant already exists (unique constraint violation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /restaurants/{id}:
+    get:
+      summary: Get a restaurant by ID
+      tags:
+        - Restaurants
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Restaurant UUID
+      responses:
+        '200':
+          description: Restaurant details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Restaurant'
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Restaurant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /restaurants/{id}/menu:
+    get:
+      summary: Get the full menu for a restaurant
+      tags:
+        - Restaurants
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Restaurant UUID
+      responses:
+        '200':
+          description: Full menu with categories and items
+          headers:
+            X-Cache:
+              schema:
+                type: string
+                enum:
+                  - HIT
+                  - MISS
+              description: Indicates whether the response was served from Redis cache
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FullMenu'
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Restaurant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /restaurants/{id}/menu-items/{itemId}:
+    put:
+      summary: Update a menu item for a restaurant
+      tags:
+        - Restaurants
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Restaurant UUID
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Menu item UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMenuItemPayload'
+      responses:
+        '200':
+          description: Menu item updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MenuItem'
+        '400':
+          description: Validation failed — no valid fields provided or invalid price type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Menu item not found for this restaurant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: restaurant-menu-service
+tags: []

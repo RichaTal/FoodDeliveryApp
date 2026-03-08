@@ -503,4 +503,107 @@ router.get('/orders/:orderId/path', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /drivers/{id}/status:
+ *   patch:
+ *     summary: Update driver active status
+ *     tags: [Drivers]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Driver UUID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - is_active
+ *             properties:
+ *               is_active:
+ *                 type: boolean
+ *                 description: Set driver as active (true) or inactive (false)
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Driver status updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     is_active:
+ *                       type: boolean
+ *       400:
+ *         description: Invalid driver ID format or invalid request body
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Driver not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.patch('/drivers/:id/status', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { is_active } = req.body;
+
+  // Validate UUID format
+  if (!validateUUID(id)) {
+    return res.status(400).json({ error: 'Invalid driver ID format' });
+  }
+
+  // Validate request body
+  if (typeof is_active !== 'boolean') {
+    return res.status(400).json({ error: 'is_active must be a boolean value' });
+  }
+
+  try {
+    // Check if driver exists
+    const checkResult = await query<{ id: string }>(
+      'SELECT id FROM drivers WHERE id = $1',
+      [id],
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Driver not found' });
+    }
+
+    // Update driver status
+    const updateResult = await query<{ id: string; is_active: boolean }>(
+      'UPDATE drivers SET is_active = $1 WHERE id = $2 RETURNING id, is_active',
+      [is_active, id],
+    );
+
+    return res.status(200).json({
+      data: updateResult.rows[0],
+    });
+  } catch (err) {
+    const error = err as Error;
+    console.error('[Route] Error updating driver status:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

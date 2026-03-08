@@ -1,0 +1,344 @@
+openapi: 3.0.0
+info:
+  title: Order Service API
+  version: 1.0.0
+  description: REST API for placing and managing food delivery orders. All write operations require an Idempotency-Key header.
+servers:
+  - url: http://localhost:3002
+    description: Local development server
+components:
+  schemas:
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        menu_item_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        price_at_time:
+          type: number
+        quantity:
+          type: integer
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        restaurant_id:
+          type: string
+          format: uuid
+        driver_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum:
+            - PENDING
+            - CONFIRMED
+            - PREPARING
+            - PICKED_UP
+            - DELIVERED
+            - CANCELLED
+        total_amount:
+          type: number
+        payment_status:
+          type: string
+          enum:
+            - PENDING
+            - SUCCESS
+            - FAILED
+        payment_txn_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+    CreateOrderBody:
+      type: object
+      required:
+        - restaurantId
+        - items
+      properties:
+        restaurantId:
+          type: string
+          format: uuid
+          example: b1e2c3d4-...
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required:
+              - menuItemId
+              - quantity
+            properties:
+              menuItemId:
+                type: string
+                format: uuid
+              quantity:
+                type: integer
+                minimum: 1
+    UpdateOrderStatusBody:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - PENDING
+            - CONFIRMED
+            - PREPARING
+            - PICKED_UP
+            - DELIVERED
+            - CANCELLED
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+paths:
+  /orders:
+    post:
+      summary: Place a new order
+      tags:
+        - Orders
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: |
+            A unique UUID used to deduplicate requests. If the same key is sent twice, the second request returns the cached result from the first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderBody'
+      responses:
+        '202':
+          description: Order accepted and queued for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      orderId:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        enum:
+                          - PENDING
+                          - CONFIRMED
+                          - PREPARING
+                          - PICKED_UP
+                          - DELIVERED
+                          - CANCELLED
+        '400':
+          description: Missing or invalid Idempotency-Key, or validation errors in the request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '402':
+          description: Payment processing failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Restaurant not available or menu item not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /orders/driver/{driverId}/active:
+    get:
+      summary: Get the active PICKED_UP order assigned to a driver
+      description: |
+        Used internally by the driver-location-service to associate GPS pings with the correct order for customer tracking. Returns 404 when the driver has no order in PICKED_UP status.
+      tags:
+        - Orders
+      parameters:
+        - in: path
+          name: driverId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Driver UUID
+      responses:
+        '200':
+          description: Active order found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      orderId:
+                        type: string
+                        format: uuid
+        '400':
+          description: Invalid driver UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No active order found for this driver
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /orders/{id}:
+    get:
+      summary: Get an order by ID
+      tags:
+        - Orders
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Order UUID
+      responses:
+        '200':
+          description: Order details including items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /orders/{id}/status:
+    patch:
+      summary: Update the status of an order
+      tags:
+        - Orders
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Order UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderStatusBody'
+      responses:
+        '200':
+          description: Order status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          description: Invalid UUID, invalid status value, or invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: order-service
+tags: []

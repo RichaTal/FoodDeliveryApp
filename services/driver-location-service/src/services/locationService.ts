@@ -28,7 +28,7 @@ export async function updateDriverPosition(
   });
   
   // Buffer for PostgreSQL batch write (fire-and-forget)
-  bufferLocationPoint(ping, orderId);
+  // bufferLocationPoint(ping, orderId);
   
   // Log at DEBUG level only to avoid log flooding at 2,000/sec
   // (In production, use proper logging library with log levels)

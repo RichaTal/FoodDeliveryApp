@@ -133,7 +133,7 @@ export async function placeOrder(
       [
         orderId,
         body.restaurantId,
-        OrderStatus.CONFIRMED,
+        OrderStatus.PENDING,
         totalAmount,
         PaymentStatus.SUCCESS,
         paymentResult.transactionId,

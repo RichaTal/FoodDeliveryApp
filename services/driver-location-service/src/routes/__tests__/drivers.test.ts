@@ -248,4 +248,127 @@ describe('Driver Routes', () => {
       expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid ID format' });
     });
   });
+
+  describe('PATCH /drivers/:id/status', () => {
+    const validId = '123e4567-e89b-12d3-a456-426614174000';
+
+    it('should update driver status to active', async () => {
+      const mockDriver = {
+        id: validId,
+        is_active: true,
+      };
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: validId }] } as any) // Check driver exists
+        .mockResolvedValueOnce({ rows: [mockDriver] } as any); // Update result
+
+      mockReq.params = { id: validId };
+      mockReq.body = { is_active: true };
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenNthCalledWith(1, 'SELECT id FROM drivers WHERE id = $1', [validId]);
+      expect(mockQuery).toHaveBeenNthCalledWith(
+        2,
+        'UPDATE drivers SET is_active = $1 WHERE id = $2 RETURNING id, is_active',
+        [true, validId],
+      );
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith({ data: mockDriver });
+    });
+
+    it('should update driver status to inactive', async () => {
+      const mockDriver = {
+        id: validId,
+        is_active: false,
+      };
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: validId }] } as any) // Check driver exists
+        .mockResolvedValueOnce({ rows: [mockDriver] } as any); // Update result
+
+      mockReq.params = { id: validId };
+      mockReq.body = { is_active: false };
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenNthCalledWith(
+        2,
+        'UPDATE drivers SET is_active = $1 WHERE id = $2 RETURNING id, is_active',
+        [false, validId],
+      );
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith({ data: mockDriver });
+    });
+
+    it('should return 400 for invalid UUID', async () => {
+      mockReq.params = { id: 'invalid-id' };
+      mockReq.body = { is_active: true };
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid driver ID format' });
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 if is_active is missing', async () => {
+      mockReq.params = { id: validId };
+      mockReq.body = {};
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'is_active must be a boolean value' });
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 if is_active is not a boolean', async () => {
+      mockReq.params = { id: validId };
+      mockReq.body = { is_active: 'true' };
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'is_active must be a boolean value' });
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 if is_active is a number', async () => {
+      mockReq.params = { id: validId };
+      mockReq.body = { is_active: 1 };
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'is_active must be a boolean value' });
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 if driver not found', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] } as any); // Driver doesn't exist
+
+      mockReq.params = { id: validId };
+      mockReq.body = { is_active: true };
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(mockQuery).toHaveBeenCalledWith('SELECT id FROM drivers WHERE id = $1', [validId]);
+      expect(mockRes.status).toHaveBeenCalledWith(404);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Driver not found' });
+    });
+
+    it('should return 500 on database error', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('Database connection failed'));
+
+      mockReq.params = { id: validId };
+      mockReq.body = { is_active: true };
+
+      await findAndExecuteRoute(router, 'patch', '/drivers/:id/status', mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+    });
+  });
 });
