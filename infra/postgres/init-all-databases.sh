@@ -5,7 +5,7 @@ set -e
 # It creates separate databases and runs initialization scripts for each
 # Runs as postgres superuser (default in docker-entrypoint-initdb.d)
 
-POSTGRES_USER="${POSTGRES_USER:-foodapp}"
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
 
 echo "Creating separate databases..."
 
