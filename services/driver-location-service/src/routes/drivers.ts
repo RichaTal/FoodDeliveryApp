@@ -69,7 +69,7 @@ router.get('/drivers/:id/location', async (req: Request, res: Response) => {
     return res.status(200).json({ data: location });
   } catch (err) {
     const error = err as Error;
-    console.error('[Route] Error getting driver location:', error.message);
+    console.log('[Route] Error getting driver location:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -175,7 +175,7 @@ router.get('/drivers/nearby', async (req: Request, res: Response) => {
     });
   } catch (err) {
     const error = err as Error;
-    console.error('[Route] Error getting nearby drivers:', error.message);
+    console.log('[Route] Error getting nearby drivers:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -356,7 +356,7 @@ router.get('/drivers/:id/path', async (req: Request, res: Response) => {
     });
   } catch (err) {
     const error = err as Error;
-    console.error('[Route] Error getting path history:', error.message);
+    console.log('[Route] Error getting path history:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -498,7 +498,7 @@ router.get('/orders/:orderId/path', async (req: Request, res: Response) => {
     });
   } catch (err) {
     const error = err as Error;
-    console.error('[Route] Error getting path history:', error.message);
+    console.log('[Route] Error getting path history:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -601,7 +601,7 @@ router.patch('/drivers/:id/status', async (req: Request, res: Response) => {
     });
   } catch (err) {
     const error = err as Error;
-    console.error('[Route] Error updating driver status:', error.message);
+    console.log('[Route] Error updating driver status:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

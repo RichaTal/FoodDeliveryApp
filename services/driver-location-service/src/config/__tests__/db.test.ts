@@ -1,5 +1,25 @@
 // Mock pg before importing
-jest.mock('pg');
+const mockPoolFactory = jest.fn();
+const mockClientFactory = {
+  query: jest.fn(),
+  release: jest.fn(),
+};
+
+const mockPoolInstance = {
+  query: jest.fn(),
+  connect: jest.fn().mockResolvedValue(mockClientFactory),
+  on: jest.fn(),
+};
+
+jest.mock('pg', () => {
+  return {
+    __esModule: true,
+    default: {
+      Pool: mockPoolFactory,
+    },
+    Pool: mockPoolFactory,
+  };
+});
 
 describe('Database Config', () => {
   const originalEnv = process.env;
@@ -21,6 +41,9 @@ describe('Database Config', () => {
       connect: jest.fn().mockResolvedValue(mockClient),
       on: jest.fn(),
     };
+
+    // Reset the mock factory to return our mock pool
+    mockPoolFactory.mockImplementation(() => mockPool);
   });
 
   afterEach(() => {
@@ -36,18 +59,16 @@ describe('Database Config', () => {
       delete process.env['POSTGRES_DB'];
 
       jest.resetModules();
-      const pg = require('pg');
-      pg.Pool = jest.fn().mockImplementation(() => mockPool); // ✅ pg.Pool, not pg.default.Pool
-
+      mockPoolFactory.mockImplementation(() => mockPool);
       require('../db.js');
 
-      expect(pg.Pool).toHaveBeenCalledWith(                  // ✅ pg.Pool
+      expect(mockPoolFactory).toHaveBeenCalledWith(
         expect.objectContaining({
           host: 'localhost',
           port: 5432,
-          user: 'foodapp',
-          password: 'foodapp',
-          database: 'foodapp',
+          user: 'postgres',
+          password: 'postgres123',
+          database: 'driver_db',
           max: 20,
           idleTimeoutMillis: 30_000,
           connectionTimeoutMillis: 2_000,
@@ -63,12 +84,10 @@ describe('Database Config', () => {
       process.env['POSTGRES_DB'] = 'customdb';
 
       jest.resetModules();
-      const pg = require('pg');
-      pg.Pool = jest.fn().mockImplementation(() => mockPool); // ✅
-
+      mockPoolFactory.mockImplementation(() => mockPool);
       require('../db.js');
 
-      expect(pg.Pool).toHaveBeenCalledWith(                  // ✅
+      expect(mockPoolFactory).toHaveBeenCalledWith(
         expect.objectContaining({
           host: 'db.example.com',
           port: 5433,
@@ -81,9 +100,7 @@ describe('Database Config', () => {
 
     it('should register pool error handler', () => {
       jest.resetModules();
-      const pg = require('pg');
-      pg.Pool = jest.fn().mockImplementation(() => mockPool); // ✅
-
+      mockPoolFactory.mockImplementation(() => mockPool);
       require('../db.js');
 
       expect(mockPool.on).toHaveBeenCalledWith('error', expect.any(Function));
@@ -96,8 +113,8 @@ describe('Database Config', () => {
 
     beforeEach(() => {
       jest.resetModules();
-      const pg = require('pg');
-      pg.Pool = jest.fn().mockImplementation(() => mockPool); // ✅
+      // Use the mock factory instead of manually overriding
+      mockPoolFactory.mockImplementation(() => mockPool);
       const db = require('../db.js');
       query = db.query;
       getClient = db.getClient;
@@ -142,8 +159,8 @@ describe('Database Config', () => {
 
     beforeEach(() => {
       jest.resetModules();
-      const pg = require('pg');
-      pg.Pool = jest.fn().mockImplementation(() => mockPool); // ✅
+      // Use the mock factory instead of manually overriding
+      mockPoolFactory.mockImplementation(() => mockPool);
       const db = require('../db.js');
       getClient = db.getClient;
     });

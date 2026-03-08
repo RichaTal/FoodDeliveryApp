@@ -6,12 +6,10 @@ import {
 } from '../locationService.js';
 import redisClient from '../../config/redis.js';
 import { storePathPoint } from '../pathHistoryService.js';
-import { bufferLocationPoint } from '../batchWriterService.js';
 
 // Mock dependencies
 jest.mock('../../config/redis.js');
 jest.mock('../pathHistoryService.js');
-jest.mock('../batchWriterService.js');
 
 const mockGeoadd = redisClient.geoadd as jest.MockedFunction<typeof redisClient.geoadd>;
 const mockZadd = redisClient.zadd as jest.MockedFunction<typeof redisClient.zadd>;
@@ -21,7 +19,6 @@ const mockZrangebyscore = redisClient.zrangebyscore as jest.MockedFunction<typeo
 const mockZrem = redisClient.zrem as jest.MockedFunction<typeof redisClient.zrem>;
 const mockPipeline = redisClient.pipeline as jest.MockedFunction<typeof redisClient.pipeline>;
 const mockStorePathPoint = storePathPoint as jest.MockedFunction<typeof storePathPoint>;
-const mockBufferLocationPoint = bufferLocationPoint as jest.MockedFunction<typeof bufferLocationPoint>;
 
 describe('locationService', () => {
   beforeEach(() => {
@@ -51,7 +48,6 @@ describe('locationService', () => {
       );
       expect(mockZadd).toHaveBeenCalled();
       expect(mockStorePathPoint).toHaveBeenCalled();
-      expect(mockBufferLocationPoint).toHaveBeenCalled();
     });
 
     it('should include orderId when provided', async () => {
@@ -63,7 +59,6 @@ describe('locationService', () => {
       await updateDriverPosition(mockPing, orderId);
 
       expect(mockStorePathPoint).toHaveBeenCalledWith(mockPing, orderId);
-      expect(mockBufferLocationPoint).toHaveBeenCalledWith(mockPing, orderId);
     });
 
     it('should set TTL tracking with expiry timestamp', async () => {
