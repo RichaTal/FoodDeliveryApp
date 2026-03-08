@@ -179,6 +179,22 @@ export async function placeOrder(
   return order;
 }
 
+/**
+ * Get the active (PICKED_UP) order assigned to a driver
+ * Returns { id } of the order, or null if no active order found
+ */
+export async function getActiveOrderForDriver(driverId: string): Promise<{ id: string } | null> {
+  const result = await query<{ id: string }>(
+    `SELECT id FROM orders
+     WHERE driver_id = $1
+       AND status = 'PICKED_UP'
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [driverId],
+  );
+  return result.rows.length > 0 ? result.rows[0] : null;
+}
+
 export async function getOrder(orderId: string): Promise<Order | null> {
   const orderResult = await query<Order>(
     `SELECT id, restaurant_id, driver_id, status, total_amount, 

@@ -4,6 +4,7 @@ import {
   placeOrder,
   getOrder,
   updateOrderStatus,
+  getActiveOrderForDriver,
 } from '../services/orderService.js';
 import type {
   CreateOrderBody,
@@ -165,6 +166,81 @@ router.post('/orders', async (req: Request, res: Response, next: NextFunction) =
     next(err);
   }
 });
+
+// ── GET /orders/driver/:driverId/active ──────────────────────────────────────
+
+/**
+ * @swagger
+ * /orders/driver/{driverId}/active:
+ *   get:
+ *     summary: Get the active PICKED_UP order assigned to a driver
+ *     description: >
+ *       Used internally by the driver-location-service to associate GPS pings
+ *       with the correct order for customer tracking. Returns 404 when the
+ *       driver has no order in PICKED_UP status.
+ *     tags: [Orders]
+ *     parameters:
+ *       - in: path
+ *         name: driverId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Driver UUID
+ *     responses:
+ *       200:
+ *         description: Active order found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orderId:
+ *                       type: string
+ *                       format: uuid
+ *       400:
+ *         description: Invalid driver UUID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: No active order found for this driver
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get(
+  '/orders/driver/:driverId/active',
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { driverId } = req.params;
+
+    if (!assertUUID(driverId, res)) return;
+
+    try {
+      const order = await getActiveOrderForDriver(driverId);
+
+      if (!order) {
+        res.status(404).json({ error: `No active order found for driver "${driverId}"` });
+        return;
+      }
+
+      res.json({ data: { orderId: order.id } });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── GET /orders/:id ──────────────────────────────────────────────────────────
 

@@ -198,6 +198,7 @@ services:
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: driver-location-service
+      ORDER_SERVICE_URL: http://order-service:3002
     ports:
       - "${DRIVER_LOCATION_PORT:-3003}:3003"
     networks:
