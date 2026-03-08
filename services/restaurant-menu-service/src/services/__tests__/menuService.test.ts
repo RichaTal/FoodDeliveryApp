@@ -8,16 +8,35 @@ import {
   updateMenuItem,
 } from '../menuService.js';
 import { query } from '../../config/db.js';
-import redisClient from '../../config/redis.js';
 
 // Mock dependencies
 jest.mock('../../config/db.js');
-jest.mock('../../config/redis.js');
+
+// Create mock functions that will be used in both the factory and tests
+// Must use `var` (not `let`/`const`) because jest.mock() is hoisted above
+// `let`/`const` declarations, putting them in the Temporal Dead Zone.
+// `var` is also hoisted AND initialized to `undefined`, so the factory can assign to it.
+var mockRedisGet: jest.Mock;
+var mockRedisSet: jest.Mock;
+var mockRedisDel: jest.Mock;
+
+jest.mock('../../config/redis.js', () => {
+  // Create mocks inside factory to ensure they're available when factory runs
+  mockRedisGet = jest.fn();
+  mockRedisSet = jest.fn();
+  mockRedisDel = jest.fn();
+  
+  return {
+    __esModule: true,
+    default: {
+      get: mockRedisGet,
+      set: mockRedisSet,
+      del: mockRedisDel,
+    },
+  };
+});
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
-const mockRedisGet = redisClient.get as jest.MockedFunction<typeof redisClient.get>;
-const mockRedisSet = redisClient.set as jest.MockedFunction<typeof redisClient.set>;
-const mockRedisDel = redisClient.del as jest.MockedFunction<typeof redisClient.del>;
 
 describe('menuService', () => {
   beforeEach(() => {
@@ -265,6 +284,46 @@ describe('menuService', () => {
         'EX',
         30,
       );
+    });
+
+    it('should handle Redis get errors gracefully and fall back to database', async () => {
+      mockRedisGet.mockRejectedValue(new Error('Redis error'));
+      mockQuery.mockResolvedValueOnce({
+        rows: mockRestaurants,
+        rowCount: 2,
+      } as any);
+      mockRedisSet.mockResolvedValue('OK');
+
+      const result = await getAllRestaurants();
+
+      expect(result).toEqual(mockRestaurants);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT'),
+      );
+    });
+
+    it('should handle Redis set errors gracefully', async () => {
+      mockRedisGet.mockResolvedValue(null);
+      mockQuery.mockResolvedValueOnce({
+        rows: mockRestaurants,
+        rowCount: 2,
+      } as any);
+      mockRedisSet.mockRejectedValue(new Error('Redis set error'));
+
+      const result = await getAllRestaurants();
+
+      // Should still return restaurants even if cache set fails
+      expect(result).toEqual(mockRestaurants);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT'),
+      );
+    });
+
+    it('should handle database errors', async () => {
+      mockRedisGet.mockResolvedValue(null);
+      mockQuery.mockRejectedValue(new Error('Database error'));
+
+      await expect(getAllRestaurants()).rejects.toThrow('Database error');
     });
   });
 

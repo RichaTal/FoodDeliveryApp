@@ -179,7 +179,6 @@ export async function getAllRestaurants(): Promise<Restaurant[]> {
     );
   
     await redisSet(cacheKey, JSON.stringify(result.rows), RESTAURANTS_TTL);
-    console.log('result.rows', result.rows);
     return result.rows;
   } catch (error) {
     console.log('Error getAllRestaurants', error);

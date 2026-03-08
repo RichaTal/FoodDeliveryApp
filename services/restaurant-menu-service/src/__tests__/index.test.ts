@@ -10,6 +10,15 @@ const mockRedisClientInstance = {
 };
 
 // Mock dependencies
+
+// swagger.ts uses `import.meta.url` which, when compiled to CJS by ts-jest,
+// conflicts with the CJS module wrapper's injected `__filename` global.
+// Since swagger is not under test here, stub it out completely.
+jest.mock('../config/swagger.js', () => ({
+  __esModule: true,
+  swaggerSpec: {},
+}));
+
 jest.mock('../config/redis.js', () => ({
   __esModule: true,
   default: mockRedisClientInstance,

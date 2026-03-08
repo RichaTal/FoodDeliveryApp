@@ -40,9 +40,9 @@ describe('Database Config', () => {
         expect.objectContaining({
           host: 'localhost',
           port: 5432,
-          user: 'foodapp',
-          password: 'foodapp',
-          database: 'foodapp',
+          user: 'postgres', 
+          password: 'postgres123',
+          database: 'restaurant_db',
           max: 50,
           idleTimeoutMillis: 30_000,
           connectionTimeoutMillis: 2_000,
