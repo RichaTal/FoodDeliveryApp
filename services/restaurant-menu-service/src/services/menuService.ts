@@ -17,7 +17,7 @@ const RESTAURANTS_TTL = 30;  // seconds
 async function redisGet(key: string): Promise<string | null> {
   try {
     return await redisClient.get(key);
-  } catch (err) {
+  } catch (_err) {
     // Silently fail - cache is optional, no logging to avoid performance overhead
     return null;
   }
@@ -26,7 +26,7 @@ async function redisGet(key: string): Promise<string | null> {
 async function redisSet(key: string, value: string, ttl: number): Promise<void> {
   try {
     await redisClient.set(key, value, 'EX', ttl);
-  } catch (err) {
+  } catch (_err) {
     // Silently fail - cache is optional, no logging to avoid performance overhead
   }
 }
@@ -34,7 +34,7 @@ async function redisSet(key: string, value: string, ttl: number): Promise<void> 
 async function redisDel(key: string): Promise<void> {
   try {
     await redisClient.del(key);
-  } catch (err) {
+  } catch (_err) {
     // Silently fail - cache is optional, no logging to avoid performance overhead
   }
 }
@@ -53,7 +53,7 @@ export async function getFullMenu(
     try {
       const menu = JSON.parse(cached) as FullMenu;
       return { menu, cacheHit: true };
-    } catch (parseErr) {
+    } catch (_parseErr) {
       // If cache is corrupted, invalidate it and fall through to DB query
       await redisDel(cacheKey).catch(() => {});
       // Fall through to DB query
@@ -136,7 +136,7 @@ export async function getFullMenu(
         category_id: row.category_id,
         restaurant_id: restaurantId,
         name: row.item_name!,
-        description: row.description,
+        description: row.description !== null ? row.description : '',
         price: row.price!,
         is_available: row.is_available!,
       });
@@ -181,7 +181,7 @@ export async function getAllRestaurants(): Promise<Restaurant[]> {
     await redisSet(cacheKey, JSON.stringify(result.rows), RESTAURANTS_TTL);
     return result.rows;
   } catch (error) {
-    console.log('Error getAllRestaurants', error);
+    // Re-throw error - let Express error handler deal with it
     throw error;
   }
  

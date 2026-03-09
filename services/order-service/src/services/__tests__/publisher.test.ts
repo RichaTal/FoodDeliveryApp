@@ -1,9 +1,9 @@
-import { publishOrderPlaced, publishOrderStatusUpdated } from '../publisher';
-import { getChannel } from '../../config/rabbitmq';
-import { OrderStatus, PaymentStatus } from '../../types/index';
+import { publishOrderPlaced, publishOrderStatusUpdated } from '../publisher.js';
+import { getChannel } from '../../config/rabbitmq.js';
+import { OrderStatus, PaymentStatus } from '../../types/index.js';
 
 // Mock dependencies
-jest.mock('../../config/rabbitmq.ts');
+jest.mock('../../config/rabbitmq.js');
 
 const mockGetChannel = getChannel as jest.MockedFunction<typeof getChannel>;
 

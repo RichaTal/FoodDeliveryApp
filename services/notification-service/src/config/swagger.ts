@@ -2,11 +2,12 @@ import swaggerJsdoc from 'swagger-jsdoc';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Use non-colliding names to avoid conflict with CJS module wrapper globals
+const _filename = fileURLToPath(import.meta.url);
+const _dirname = dirname(_filename);
 
 // Detect if running from compiled dist directory (Docker/production)
-const isProduction = __dirname.includes('dist');
+const isProduction = _dirname.includes('dist');
 const fileExtension = isProduction ? 'js' : 'ts';
 
 const options: swaggerJsdoc.Options = {
@@ -53,7 +54,7 @@ const options: swaggerJsdoc.Options = {
     },
   },
   apis: [
-    join(__dirname, `../index.${fileExtension}`),
+    join(_dirname, `../index.${fileExtension}`),
   ],
 };
 

@@ -81,8 +81,8 @@ describe('Restaurant Routes', () => {
           lat: 40.7128,
           lng: -74.0060,
           is_open: true,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
+          created_at: new Date('2024-01-01T00:00:00Z'),
+          updated_at: new Date('2024-01-01T00:00:00Z'),
         },
       ];
       mockMenuService.getAllRestaurants.mockResolvedValue(mockRestaurants);
@@ -105,8 +105,8 @@ describe('Restaurant Routes', () => {
         lat: 40.7128,
         lng: -74.0060,
         is_open: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z',
+        created_at: new Date('2024-01-01T00:00:00Z'),
+        updated_at: new Date('2024-01-01T00:00:00Z'),
       };
       mockMenuService.getRestaurantById.mockResolvedValue(mockRestaurant);
       mockReq.params = { id: validId };
@@ -150,8 +150,8 @@ describe('Restaurant Routes', () => {
           lat: 40.7128,
           lng: -74.0060,
           is_open: true,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
+          created_at: new Date('2024-01-01T00:00:00Z'),
+          updated_at: new Date('2024-01-01T00:00:00Z'),
         },
         categories: [],
       };
@@ -173,8 +173,8 @@ describe('Restaurant Routes', () => {
           lat: 40.7128,
           lng: -74.0060,
           is_open: true,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
+          created_at: new Date('2024-01-01T00:00:00Z'),
+          updated_at: new Date('2024-01-01T00:00:00Z'),
         },
         categories: [],
       };
@@ -211,8 +211,8 @@ describe('Restaurant Routes', () => {
         id: 'rest-123',
         ...validPayload,
         is_open: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z',
+        created_at: new Date('2024-01-01T00:00:00Z'),
+        updated_at: new Date('2024-01-01T00:00:00Z'),
       };
       mockMenuService.createRestaurant.mockResolvedValue(mockRestaurant);
       mockReq.body = validPayload;

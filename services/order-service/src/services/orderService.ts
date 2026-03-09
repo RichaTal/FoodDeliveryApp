@@ -1,15 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
-import { query, getClient } from '../config/db';
-import redisClient from '../config/redis';
-import { processPayment } from './paymentStub';
-import { publishOrderPlaced, publishOrderStatusUpdated } from './publisher';
-import { getRestaurantMenu, extractMenuItems } from './restaurantClient';
+import { query, getClient } from '../config/db.js';
+import redisClient from '../config/redis.js';
+import { processPayment } from './paymentStub.js';
+import { publishOrderPlaced, publishOrderStatusUpdated } from './publisher.js';
+import { getRestaurantMenu, extractMenuItems } from './restaurantClient.js';
 import type {
   CreateOrderBody,
   Order,
   OrderItem,
   MenuItem,
-} from '../types/index';
+} from '../types/index.js';
 import {
   OrderStatus,
   PaymentStatus,
@@ -17,7 +17,7 @@ import {
   MenuItemNotAvailableError as MenuItemNotAvailableErrorClass,
   PaymentFailedError as PaymentFailedErrorClass,
   InvalidStatusTransitionError as InvalidStatusTransitionErrorClass,
-} from '../types/index';
+} from '../types/index.js';
  
 // Valid status transitions
 const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {

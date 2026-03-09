@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as orderService from '../../services/orderService.js';
-import { OrderStatus } from '../../types/index.js';
+import { OrderStatus, PaymentStatus } from '../../types/index.js';
 
 // Mock the orderService
 jest.mock('../../services/orderService.js');
@@ -68,7 +68,7 @@ describe('Order Routes', () => {
         driver_id: null,
         status: OrderStatus.PENDING,
         total_amount: 20.99,
-        payment_status: 'SUCCESS' as const,
+        payment_status: PaymentStatus.SUCCESS,
         payment_txn_id: 'txn-123',
         created_at: new Date(),
         updated_at: new Date(),
@@ -162,7 +162,7 @@ describe('Order Routes', () => {
         driver_id: null,
         status: OrderStatus.PENDING,
         total_amount: 20.99,
-        payment_status: 'SUCCESS' as const,
+        payment_status: PaymentStatus.SUCCESS,
         payment_txn_id: 'txn-123',
         created_at: new Date(),
         updated_at: new Date(),
@@ -207,7 +207,7 @@ describe('Order Routes', () => {
         driver_id: null,
         status: OrderStatus.CONFIRMED,
         total_amount: 20.99,
-        payment_status: 'SUCCESS' as const,
+        payment_status: PaymentStatus.SUCCESS,
         payment_txn_id: 'txn-123',
         created_at: new Date(),
         updated_at: new Date(),

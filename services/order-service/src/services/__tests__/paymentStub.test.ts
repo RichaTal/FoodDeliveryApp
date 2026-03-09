@@ -1,4 +1,4 @@
-import { processPayment } from '../paymentStub';
+import { processPayment } from '../paymentStub.js';
 
 describe('paymentStub', () => {
   beforeEach(() => {

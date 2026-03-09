@@ -1,9 +1,9 @@
-import { placeOrder, getOrder, updateOrderStatus } from '../orderService';
-import { getRestaurantMenu, extractMenuItems } from '../restaurantClient';
-import { processPayment } from '../paymentStub';
-import { publishOrderPlaced, publishOrderStatusUpdated } from '../publisher';
-import { query, getClient } from '../../config/db';
-import redisClient from '../../config/redis';
+import { placeOrder, getOrder, updateOrderStatus } from '../orderService.js';
+import { getRestaurantMenu, extractMenuItems } from '../restaurantClient.js';
+import { processPayment } from '../paymentStub.js';
+import { publishOrderPlaced, publishOrderStatusUpdated } from '../publisher.js';
+import { query, getClient } from '../../config/db.js';
+import redisClient from '../../config/redis.js';
 import pg from 'pg';
 import {
   OrderStatus,
@@ -12,14 +12,14 @@ import {
   MenuItemNotAvailableError,
   PaymentFailedError,
   InvalidStatusTransitionError,
-} from '../../types/index';
+} from '../../types/index.js';
 
 // Mock dependencies
-jest.mock('../restaurantClient');
-jest.mock('../paymentStub');
-jest.mock('../publisher');
-jest.mock('../../config/db');
-jest.mock('../../config/redis');
+jest.mock('../restaurantClient.js');
+jest.mock('../paymentStub.js');
+jest.mock('../publisher.js');
+jest.mock('../../config/db.js');
+jest.mock('../../config/redis.js');
 
 const mockGetRestaurantMenu = jest.mocked(getRestaurantMenu);
 const mockExtractMenuItems = jest.mocked(extractMenuItems);

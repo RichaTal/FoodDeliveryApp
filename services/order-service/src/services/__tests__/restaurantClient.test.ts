@@ -1,4 +1,4 @@
-import { getRestaurant, getRestaurantMenu, extractMenuItems } from '../restaurantClient';
+import { getRestaurant, getRestaurantMenu, extractMenuItems } from '../restaurantClient.js';
 
 // Mock fetch globally
 global.fetch = jest.fn();

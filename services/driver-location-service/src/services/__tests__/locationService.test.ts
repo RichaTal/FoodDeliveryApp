@@ -35,7 +35,7 @@ describe('locationService', () => {
 
     it('should update driver position in Redis GEO', async () => {
       mockGeoadd.mockResolvedValue(1);
-      mockZadd.mockResolvedValue(1);
+      mockZadd.mockResolvedValue('1');
       mockStorePathPoint.mockResolvedValue();
 
       await updateDriverPosition(mockPing);
@@ -53,7 +53,7 @@ describe('locationService', () => {
     it('should include orderId when provided', async () => {
       const orderId = 'order-123';
       mockGeoadd.mockResolvedValue(1);
-      mockZadd.mockResolvedValue(1);
+      mockZadd.mockResolvedValue('1');
       mockStorePathPoint.mockResolvedValue();
 
       await updateDriverPosition(mockPing, orderId);
@@ -63,7 +63,7 @@ describe('locationService', () => {
 
     it('should set TTL tracking with expiry timestamp', async () => {
       mockGeoadd.mockResolvedValue(1);
-      mockZadd.mockResolvedValue(1);
+      mockZadd.mockResolvedValue('1');
       mockStorePathPoint.mockResolvedValue();
 
       const beforeTime = Date.now();
@@ -76,7 +76,7 @@ describe('locationService', () => {
         mockPing.driverId,
       );
 
-      const expiryScore = mockZadd.mock.calls[0][1] as number;
+      const expiryScore = mockZadd.mock.calls[0][1] as unknown as number;
       expect(expiryScore).toBeGreaterThanOrEqual(beforeTime + 30000);
       expect(expiryScore).toBeLessThanOrEqual(afterTime + 30000);
     });
@@ -85,7 +85,7 @@ describe('locationService', () => {
   describe('getDriverPosition', () => {
     it('should return driver position when found', async () => {
       const driverId = 'driver-123';
-      mockGeopos.mockResolvedValue([[-74.0060, 40.7128]]);
+      mockGeopos.mockResolvedValue([['-74.0060', '40.7128']]);
 
       const result = await getDriverPosition(driverId);
 

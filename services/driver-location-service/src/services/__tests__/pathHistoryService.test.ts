@@ -30,7 +30,7 @@ describe('pathHistoryService', () => {
     };
 
     it('should store path point with driverId', async () => {
-      mockZadd.mockResolvedValue(1);
+      mockZadd.mockResolvedValue('1');
       mockExpire.mockResolvedValue(1);
       mockZremrangebyscore.mockResolvedValue(0);
 
@@ -47,7 +47,7 @@ describe('pathHistoryService', () => {
 
     it('should store path point with orderId when provided', async () => {
       const orderId = 'order-123';
-      mockZadd.mockResolvedValue(1);
+      mockZadd.mockResolvedValue('1');
       mockExpire.mockResolvedValue(1);
       mockZremrangebyscore.mockResolvedValue(0);
 
@@ -62,7 +62,7 @@ describe('pathHistoryService', () => {
 
     it('should cleanup old points', async () => {
       const cutoffTime = Date.now() - 2 * 60 * 60 * 1000;
-      mockZadd.mockResolvedValue(1);
+      mockZadd.mockResolvedValue('1');
       mockExpire.mockResolvedValue(1);
       mockZremrangebyscore.mockResolvedValue(5);
 

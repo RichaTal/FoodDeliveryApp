@@ -33,11 +33,11 @@ export async function getRestaurant(restaurantId: string): Promise<Restaurant | 
     }
 
     if (!response.ok) {
-      const error: RestaurantServiceError = await response.json();
+      const error = await response.json() as RestaurantServiceError;
       throw new Error(`Restaurant service error: ${error.error || response.statusText}`);
     }
 
-    const result: RestaurantServiceResponse<Restaurant> = await response.json();
+    const result = await response.json() as RestaurantServiceResponse<Restaurant>;
     return result.data;
   } catch (error) {
     const err = error as Error;
@@ -66,11 +66,11 @@ export async function getRestaurantMenu(restaurantId: string): Promise<FullMenu 
     }
 
     if (!response.ok) {
-      const error: RestaurantServiceError = await response.json();
+      const error = await response.json() as RestaurantServiceError;
       throw new Error(`Restaurant service error: ${error.error || response.statusText}`);
     }
 
-    const result: RestaurantServiceResponse<FullMenu> = await response.json();
+    const result = await response.json() as RestaurantServiceResponse<FullMenu>;
     return result.data;
   } catch (error) {
     const err = error as Error;

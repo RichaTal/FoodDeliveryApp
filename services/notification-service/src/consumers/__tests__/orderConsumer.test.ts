@@ -16,7 +16,7 @@ describe('orderConsumer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockChannel = {
-      consume: jest.fn((queue, callback) => {
+      consume: jest.fn((_queue, callback) => {
         consumeCallback = callback;
         return Promise.resolve({ consumerTag: 'test-consumer' });
       }),

@@ -1,4 +1,4 @@
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocket } from 'ws';
 import { createServer } from 'http';
 import {
   initializeWebSocketServer,
@@ -11,25 +11,25 @@ import * as sessionService from '../../services/sessionService.js';
 // Mock dependencies
 jest.mock('../../services/sessionService.js');
 
-const mockRegisterSession = sessionService.registerSession as jest.MockedFunction<
+const _mockRegisterSession = sessionService.registerSession as jest.MockedFunction<
   typeof sessionService.registerSession
 >;
-const mockRemoveSession = sessionService.removeSession as jest.MockedFunction<
+const _mockRemoveSession = sessionService.removeSession as jest.MockedFunction<
   typeof sessionService.removeSession
 >;
-const mockRefreshSession = sessionService.refreshSession as jest.MockedFunction<
+const _mockRefreshSession = sessionService.refreshSession as jest.MockedFunction<
   typeof sessionService.refreshSession
 >;
 
 describe('Customer WebSocket', () => {
   let httpServer: ReturnType<typeof createServer>;
-  let mockWs: Partial<WebSocket>;
+  let _mockWs: Partial<WebSocket>;
 
   beforeEach(() => {
     httpServer = createServer();
     jest.clearAllMocks();
 
-    mockWs = {
+    _mockWs = {
       close: jest.fn(),
       send: jest.fn(),
       ping: jest.fn(),
@@ -81,8 +81,8 @@ describe('Customer WebSocket', () => {
   describe('sendToCustomer', () => {
     it('should return false if customer not connected', () => {
       const result = sendToCustomer('non-existent-order', {
-        type: 'LOCATION_UPDATE',
-        payload: {},
+        type: 'ORDER_UPDATE',
+        payload: { orderId: 'non-existent-order', status: 'PENDING' },
       });
       expect(result).toBe(false);
     });
@@ -91,8 +91,8 @@ describe('Customer WebSocket', () => {
       // This would require setting up an actual connection
       // For now, test the function signature
       const result = sendToCustomer('order-123', {
-        type: 'LOCATION_UPDATE',
-        payload: {},
+        type: 'ORDER_UPDATE',
+        payload: { orderId: 'order-123', status: 'PENDING' },
       });
       expect(typeof result).toBe('boolean');
     });

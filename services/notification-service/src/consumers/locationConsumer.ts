@@ -37,7 +37,7 @@ export async function startLocationConsumer(): Promise<void> {
           }
         } catch (error) {
           const err = error as Error;
-          console.log(`[LocationConsumer] Error processing message:`, err);
+          console.error(`[LocationConsumer] Error processing message:`, err);
         }
       },
     });
@@ -45,7 +45,7 @@ export async function startLocationConsumer(): Promise<void> {
     console.info(`[LocationConsumer] Started consuming from Kafka topic: ${TOPIC}`);
   } catch (error) {
     const err = error as Error;
-    console.log(`[LocationConsumer] Failed to start consumer:`, err);
+    console.error(`[LocationConsumer] Failed to start consumer:`, err);
     throw err;
   }
 }

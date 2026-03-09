@@ -44,7 +44,7 @@ export async function startOrderConsumer(): Promise<void> {
           channel.ack(msg);
         } catch (error) {
           const err = error as Error;
-          console.log(`[OrderConsumer] Error processing message:`, err);
+          console.error(`[OrderConsumer] Error processing message:`, err);
 
           // Parse error or unexpected payload - dead-letter, do not requeue
           channel.nack(msg, false, false);
@@ -56,7 +56,7 @@ export async function startOrderConsumer(): Promise<void> {
     console.info(`[OrderConsumer] Started consuming from queue: ${QUEUE_NAME}`);
   } catch (error) {
     const err = error as Error;
-    console.log(`[OrderConsumer] Failed to start consumer:`, err);
+    console.error(`[OrderConsumer] Failed to start consumer:`, err);
     throw err;
   }
 }
