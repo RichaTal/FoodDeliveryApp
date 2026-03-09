@@ -9,7 +9,7 @@ import type {
   UpdateMenuItemPayload,
 } from '../types/index.js';
 
-const MENU_TTL = 60;         // seconds
+const MENU_TTL = 900;         // seconds (15 minutes)
 const RESTAURANTS_TTL = 30;  // seconds
 
 // ── Cache helpers ────────────────────────────────────────────────────────────

@@ -124,7 +124,7 @@ describe('menuService', () => {
       expect(result.cacheHit).toBe(false);
       expect(result.menu?.restaurant.id).toBe('rest-123');
       expect(result.menu?.categories).toHaveLength(1);
-      expect(mockRedisSet).toHaveBeenCalledWith(cacheKey, expect.any(String), 'EX', 60);
+      expect(mockRedisSet).toHaveBeenCalledWith(cacheKey, expect.any(String), 'EX', 900);
     });
 
     it('should return null when restaurant not found', async () => {

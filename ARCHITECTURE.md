@@ -9,7 +9,7 @@
 5. [Technology Decisions](#technology-decisions)
    - [Database — PostgreSQL over MongoDB](#database--postgresql-over-mongodb)
    - [Cache — Redis over Memcached](#cache--redis-over-memcached)
-   - [Messaging — RabbitMQ over Kafka](#messaging--rabbitmq-over-kafka)
+   - [Messaging — Hybrid: RabbitMQ for Orders, Kafka for GPS](#messaging--hybrid-rabbitmq-for-orders-kafka-for-gps)
 6. [System Architecture Diagram](#system-architecture-diagram)
 7. [Service-by-Service Breakdown](#service-by-service-breakdown)
    - [Restaurant & Menu Service](#1-restaurant--menu-service)
@@ -90,7 +90,16 @@ Order ──< OrderItem ──> MenuItem (price snapshot)
     └──> Driver
 ```
 
-An order references a restaurant, line items reference menu items (with a price snapshot at the time of order), and a driver is assigned to an order. These are hard foreign-key relationships that benefit from referential integrity enforced at the database level.
+Order Service (orders_db)
+orders (id, restaurant_id, driver_id, status, total_amount)
+  └──> order_items (id, order_id, menu_item_id, quantity, price_at_time)
+
+Restaurant Service (restaurant_db)
+restaurants (id, name, address)
+  └──> menu_categories (id, restaurant_id, name)
+        └──> menu_items (id, category_id, restaurant_id, price) 
+
+An order references a order items, restaurants refer menu categories and menu categories refer menu items. These are hard foreign-key relationships that benefit from referential integrity enforced at the database level.
 
 | Concern | PostgreSQL | MongoDB |
 |---|---|---|
@@ -152,9 +161,9 @@ In-process caches are fastest (no network hop) but break when services scale hor
 
 ---
 
-### Messaging — RabbitMQ over Kafka
+### Messaging — Hybrid: RabbitMQ for Orders, Kafka for GPS
 
-**Decision: RabbitMQ as the message broker**
+**Decision: Hybrid messaging — RabbitMQ for order events, Kafka for driver GPS events**
 
 #### Scale Reality Check
 
@@ -171,58 +180,78 @@ Before choosing a message broker, the actual event volume was re-examined:
 
 | Broker | Throughput Capacity | Our Peak Load | Utilisation |
 |---|---|---|---|
-| RabbitMQ | ~20,000–50,000 msg/sec | ~2,033/sec | ~4–10% |
-| Kafka | Millions/sec | ~2,033/sec | ~0.002% |
+| RabbitMQ | ~20,000–50,000 msg/sec | ~41/sec (orders only) | <1% |
+| Kafka | Millions/sec | ~2,000/sec (GPS only) | ~0.002% |
 
-Kafka would operate at a fraction of a percent of its capacity — it is significantly over-engineered for this scale.
+**RabbitMQ handles order events. Kafka handles driver GPS events.** Each broker is used for the workload it is best suited for.
 
 #### Feature Comparison
 
-| Feature | RabbitMQ | Kafka | Do We Need It? |
-|---|---|---|---|
-| High throughput (>50K/sec) | ❌ | ✅ | ❌ No — 2K/sec is our peak |
-| Message retention & replay | ❌ (consumed = deleted) | ✅ | ❌ Not in core requirements |
-| Multiple independent consumers | ✅ Via Fanout Exchange | ✅ Via Consumer Groups | ✅ Yes — covered by both |
-| Message routing (topic/fanout) | ✅ Flexible exchanges | ✅ Topics | ✅ Yes — covered by both |
-| Operational simplicity | ✅ Simple to set up | ❌ Complex (partitions, offsets, KRaft) | ✅ Prefer simpler |
-| Learning curve | Gentle | Steep | ✅ Prefer gentler |
+| Feature | RabbitMQ | Kafka | Order Events | GPS Events |
+|---|---|---|---|---|
+| High throughput (>50K/sec) | ❌ | ✅ | ❌ Not needed (~8/sec) | ❌ Not needed at current scale |
+| Message retention & replay | ❌ (consumed = deleted) | ✅ | ❌ Not required | ✅ Useful for analytics |
+| Partition-key ordering | ❌ | ✅ | ❌ Not needed | ✅ **Critical** — per-driver ordering |
+| Multiple independent consumers | ✅ Via Fanout Exchange | ✅ Via Consumer Groups | ✅ Covered | ✅ Covered |
+| Message routing | ✅ Flexible exchanges | ✅ Topics | ✅ Complex fanout needed | ✅ Simple topic |
+| Disk-based durability at high volume | ⚠️ Memory pressure at 2K/sec | ✅ Append-only log on disk | ✅ Low volume — fine | ✅ **Required** |
+| Operational simplicity | ✅ | ❌ Complex (partitions, offsets, KRaft) | ✅ Prefer simpler | ✅ Acceptable overhead |
 
-#### How RabbitMQ Covers the Use Cases
+#### Why Kafka for GPS Events
 
-**Order placed — multiple consumers:**
+Kafka is the correct choice for the 2,000 GPS events/sec stream for three reasons:
+
+**1. Partition-key ordering per driver**
+```
+Topic: driver-location-events
+  Partition 0 → driver_001, driver_005, driver_009 ...
+  Partition 1 → driver_002, driver_006, driver_010 ...
+  Partition N → ...
+```
+Using `driverId` as the partition key guarantees all pings from the same driver land on the same partition in chronological order. Without this, a slow consumer could deliver an older ping after a newer one, causing the customer's tracking map to show the driver "jumping" backwards. RabbitMQ has no equivalent mechanism.
+
+**2. Disk-based durability prevents data loss at high volume**
+
+At 2,000 events/sec, if any consumer goes down for 5 minutes, ~600,000 messages accumulate. RabbitMQ stores unacknowledged messages in memory — sustained backpressure risks broker OOM. Kafka's append-only log on disk handles this naturally; the consumer resumes from its last committed offset with zero data loss.
+
+**3. Multiple independent consumers without re-publishing**
+
+When the restaurant service or an analytics pipeline needs to consume driver location events, a new Kafka consumer group is all that is required — each group reads the full stream independently at its own pace. With RabbitMQ, each new consumer requires a new queue bound to the exchange, and each queue buffers its own copy of 2,000 messages/sec.
+
+```
+Topic: driver-location-events
+   ├── Consumer Group: notification-service   (real-time push to customer)
+   ├── Consumer Group: order-service          (update ETA, detect arrival)
+   └── Consumer Group: restaurant-service     (alert kitchen when driver nearby)
+```
+
+#### Why RabbitMQ for Order Events
+
+Order events are low-volume (~8/sec) and benefit from RabbitMQ's flexible exchange model:
+
 ```
 Order Service
       │
       ▼
-[Fanout Exchange: order.placed]
-      ├──→ Queue: notification-service   (notify customer — order confirmed)
-      └──→ Queue: driver-assignment      (find available driver)
+[Fanout Exchange: order.events]
+      ├──→ Queue: orders.notification     → Notification Service
 ```
 
-**GPS update — notification fanout:**
-```
-Driver Location Service
-      │
-      ▼
-[Direct Exchange: driver.location.updated]
-      └──→ Queue: notification-service   (push to customer tracking this order)
-```
+- **Fanout exchange** broadcasts to all bound queues automatically — no consumer group configuration needed
+- **Per-message acknowledgment (ack/nack)** with dead-letter queue support ensures no order event is silently dropped
+- **Operational simplicity** — far lower overhead than running a Kafka cluster for 8 messages/second
 
-**Why NOT Kafka?**
+#### Why NOT a Single Broker for Everything
 
-Kafka's two unique advantages over RabbitMQ are:
-1. **Message retention & replay** — valuable for event sourcing and analytics pipelines
-2. **Massive throughput** — millions of messages/second
+| Scenario | RabbitMQ only | Kafka only | Hybrid ✅ |
+|---|---|---|---|
+| Per-driver GPS ordering | ❌ No partition keys | ✅ | ✅ |
+| Disk durability at 2K/sec | ⚠️ Memory risk | ✅ | ✅ |
+| Complex order routing | ✅ Fanout exchange | ⚠️ Application-level logic needed | ✅ |
+| Order ack/nack semantics | ✅ Native | ⚠️ Requires manual offset management | ✅ |
+| Operational overhead | Low | High (partitions, KRaft) | Moderate |
 
-Neither of these is required in the current scope. Kafka introduces significant operational complexity: partition strategy, offset management, consumer group coordination, and KRaft/ZooKeeper setup. This complexity is not justified at 2,033 events/second.
-
-**When to migrate to Kafka:**
-- GPS fleet grows beyond 50,000 concurrent drivers
-- Analytics pipeline requiring event replay is introduced
-- 5+ independent services consuming the same event stream simultaneously
-- Full data streaming / data lake architecture is needed
-
-**Conclusion:** RabbitMQ delivers all required messaging capabilities with a fraction of the operational complexity. It is the correct choice for this scale.
+**Conclusion:** Each broker is used for the workload it is best suited for. RabbitMQ handles the low-volume, routing-heavy order domain. Kafka handles the high-frequency, ordering-sensitive GPS stream. This eliminates the weaknesses of using either broker alone.
 
 ---
 
@@ -233,33 +262,45 @@ Neither of these is required in the current scope. Kafka introduces significant 
                         │           API Gateway            │
                         │    (Routing, Rate Limiting)      │
                         └──────┬──────────┬──────┬─────────┘
-                               │          │      │         │
-                    ┌──────────▼──┐  ┌────▼────┐  ┌───────▼──────┐  ┌──────────────┐
-                    │ Restaurant  │  │  Order  │  │    Driver    │  │ Notification │
-                    │  & Menu Svc │  │   Svc   │  │  Location Svc│  │    Service   │
-                    └──────┬──────┘  └────┬────┘  └───────┬──────┘  └──────┬───────┘
-                           │              │               │                 │
-                    ┌──────▼──────┐  ┌────▼────┐   ┌──────▼──────┐         │
-                    │  PostgreSQL │  │ Postgres│   │    Redis    │         │
-                    │  (menus,   │  │ (orders,│   │  GEO Store  │         │
-                    │restaurants)│  │  items) │   │(live driver │         │
-                    └─────────────┘  └────┬────┘   │  positions)│         │
-                           │              │         └─────────────┘         │
-                    ┌──────▼──────┐       │                │                │
-                    │    Redis    │       │                │                │
-                    │ (menu cache)│       │                │                │
-                    └─────────────┘       │                │                │
-                                          │                │                │
-                                   ┌──────▼────────────────▼────────────────▼──────┐
-                                   │              RabbitMQ                          │
-                                   │  [order.placed]   [driver.location.updated]    │
-                                   └────────────────────────────────────────────────┘
-                                                          │
-                                              ┌───────────▼───────────┐
-                                              │         Redis         │
-                                              │ (WebSocket session    │
-                                              │  registry)            │
-                                              └───────────────────────┘
+                               │          │               │
+                    ┌──────────▼──┐  ┌────▼────┐  ┌───────▼──────┐  
+                    │ Restaurant  │  │  Order  │  │    Driver    │    
+                    │  & Menu Svc │  │   Svc   │  │  Location Svc│     
+                    └──────┬──────┘  └────┬────┘  └───────┬──────┘                                          │               │                 │
+                    ┌──────▼──────┐  ┌────▼────┐   ┌──────▼──────┐         
+                    │  PostgreSQL │  │ Postgres│   │    Redis    │         
+                    │  (menus,    │  │ (orders,│   │  GEO Store  │      
+                    │restaurants) │  │  items) │   │(live driver │         
+                    └─────────────┘  └────┬────┘   │  positions) │         
+                           │              │        └─────────────┘         
+                    ┌──────▼──────┐       │                │                
+                    │    Redis    │       │                │                
+                    │ (menu cache)│       │                │                
+                    └─────────────┘       │                │                
+                                          │                │                
+                                   ┌──────▼──────┐         │                
+                                   │    Redis    |         |    
+                                   │(idempotency)│         |                  
+                                   └─────────────┘         |                  
+                                          |                │                
+                                   ┌──────▼──────┐  ┌──────▼────────────────────┐
+                                   │  RabbitMQ   │  │           Kafka           │
+                                   │[order.events│  │  [driver-location-events] │
+                                   │  fanout]    │  │  (key: driverId)          │
+                                   └──────┬──────┘  └─────────────┬─────────────┘
+                                          │                       │
+                                          └────────────┬──────────┘
+                                                       │
+                                              ┌────────▼──────────┐
+                                              │   Notification    │
+                                              │     Service       │
+                                              └────────┬──────────┘
+                                                       │
+                                              ┌────────▼──────────┐
+                                              │      Redis        │
+                                              │ (WebSocket session│
+                                              │  registry)        │
+                                              └───────────────────┘
 ```
 
 ---
@@ -277,7 +318,7 @@ Neither of these is required in the current scope. Kafka introduces significant 
 
 **Key Design Decisions:**
 - Full menu payload (restaurant + categories + items) is serialised to JSON and stored in Redis on first request
-- Cache key: `menu:{restaurant_id}`, TTL: 60 seconds
+- Cache key: `menu:{restaurant_id}`, TTL: 15 minutes
 - On cache hit: ~5ms response → comfortably under the 200ms P99 target
 - On cache miss: query PostgreSQL, populate Redis, return response (~80–120ms)
 - On menu update via admin API: explicitly delete `menu:{restaurant_id}` from Redis (cache invalidation)
@@ -359,13 +400,13 @@ POST /orders
 - Hot Data Store: Redis GEO
 - Driver Profiles: PostgreSQL
 - Protocol: WebSocket (inbound from driver app)
-- Messaging: RabbitMQ (publisher)
+- Messaging: **Kafka** (publisher)
 
 **Key Design Decisions:**
 - WebSocket is used (not HTTP polling) to sustain 10,000 persistent connections without per-request handshake overhead
 - Each GPS ping writes to Redis GEO (`GEOADD`) in under 1ms — the 2,000 events/sec throughput requirement is comfortably met
 - Driver position TTL is set to 30 seconds — if no ping is received, the driver is considered offline and removed from the active GEO set
-- Each position update is published to RabbitMQ (`driver.location.updated`) for the Notification Service to consume
+- Each position update is published to **Kafka** (`driver-location-events` topic) using `driverId` as the **partition key**, guaranteeing chronological ordering per driver
 - Driver profile data (name, vehicle type, etc.) is stored in PostgreSQL as it is static
 
 **GPS Ingestion Flow:**
@@ -377,7 +418,7 @@ Driver Location Service receives: { driverId, lat, lng, timestamp }
       │
       ├──→ GEOADD drivers:active {lng} {lat} {driverId}   [Redis ~1ms]
       │
-      └──→ Publish to RabbitMQ: driver.location.updated   [async]
+      └──→ Publish to Kafka: driver-location-events        [async, key=driverId]
 ```
 
 **API Endpoints:**
@@ -395,24 +436,35 @@ Driver Location Service receives: { driverId, lat, lng, timestamp }
 - Runtime: Node.js (TypeScript)
 - Session Store: Redis (WebSocket connection registry)
 - Protocol: WebSocket (outbound to customer browser)
-- Messaging: RabbitMQ (consumer)
+- Messaging: **RabbitMQ** (order events consumer) + **Kafka** (driver location events consumer)
 
 **Key Design Decisions:**
 - When the Notification Service is horizontally scaled to multiple instances, each instance holds a subset of customer WebSocket connections. Redis is used as a shared registry to map `order_id → instance_id`, so messages are routed to the correct instance holding the customer's connection
-- Consumes two RabbitMQ queues:
-  - `driver.location.updated` — pushes live coordinates to the customer tracking that driver's order
-  - `order.*` (placed, confirmed, picked up, delivered) — pushes order status updates to the customer
+- Consumes **two separate streams**:
+  - **Kafka** topic `driver-location-events` (consumer group: `notification-location-consumer`) — high-frequency GPS location updates at 2,000 events/sec
+  - **RabbitMQ** queue `orders.notification` — order status events (placed, confirmed, picked up, delivered)
 - The service itself has no persistent database — it is stateless except for the Redis session registry
 
-**Message Flow:**
+**Message Flow — Driver Location:**
 ```
-RabbitMQ: driver.location.updated
+Kafka: driver-location-events (consumer group: notification-location-consumer)
       │
-Notification Service consumes message: { driverId, lat, lng }
+Notification Service consumes message: { driverId, orderId, lat, lng }
       │
 Lookup Redis: ws:session:{orderId} → which instance owns this customer?
       │
 Route to correct instance → Push via WebSocket to customer browser
+```
+
+**Message Flow — Order Status:**
+```
+RabbitMQ: orders.notification queue
+      │
+Notification Service consumes message: { orderId, status }
+      │
+Lookup Redis: ws:session:{orderId} → which instance?
+      │
+Push ORDER_UPDATE via WebSocket to customer browser
 ```
 
 **API Endpoints:**
@@ -495,7 +547,7 @@ CREATE TABLE order_items (
 
 | Key Pattern | Type | TTL | Used By | Purpose |
 |---|---|---|---|---|
-| `menu:{restaurantId}` | String (JSON) | 60s | Restaurant & Menu Svc | Cached full menu payload |
+| `menu:{restaurantId}` | String (JSON) | 15m | Restaurant & Menu Svc | Cached full menu payload |
 | `restaurant:status:{id}` | String | 30s | Restaurant & Menu Svc | Open/closed status cache |
 | `idempotency:{requestId}` | String | 24h | Order Service | Prevent duplicate orders |
 | `drivers:active` | GEO Set | Per-member 30s | Driver Location Svc | Live driver positions |
@@ -518,7 +570,7 @@ The P99 <200ms target is achieved through a Redis cache-aside pattern:
 4. On menu update → DEL menu:{restaurantId}                (explicit invalidation)
 ```
 
-Short TTL (60s) ensures menu changes propagate to customers within one minute without requiring complex cache invalidation across all menu update paths.
+Short TTL (15 minutes) ensures menu changes propagate to customers within 15 minutes without requiring complex cache invalidation across all menu update paths.
 
 ### Driver Position (Driver Location Service)
 
@@ -535,25 +587,31 @@ Redis GEO is used as the live position store — not a cache, but the primary st
 
 ## Messaging Strategy
 
-### RabbitMQ Exchange & Queue Design
+### RabbitMQ — Order Events
 
 ```
 Exchange: order.events (Fanout)
   ├── Queue: orders.notification     → Notification Service
   └── Queue: orders.driver-assign   → Driver Assignment logic (future)
+```
 
-Exchange: driver.events (Direct)
-  └── Queue: driver.location.notification → Notification Service
+### Kafka — Driver GPS Events
+
+```
+Topic: driver-location-events  (partition key: driverId)
+  ├── Consumer Group: notification-location-consumer  → Notification Service
+  ├── Consumer Group: order-service-consumer          → Order Service (future)
+  └── Consumer Group: restaurant-service-consumer     → Restaurant Service (future)
 ```
 
 ### Published Events
 
-| Event | Published By | Consumed By | Payload |
-|---|---|---|---|
-| `order.placed` | Order Service | Notification Service | `{ orderId, customerId, restaurantId, items }` |
-| `order.confirmed` | Order Service | Notification Service | `{ orderId, status }` |
-| `order.status.updated` | Order Service | Notification Service | `{ orderId, status }` |
-| `driver.location.updated` | Driver Location Service | Notification Service | `{ driverId, orderId, lat, lng, timestamp }` |
+| Event | Published By | Broker | Consumed By | Payload |
+|---|---|---|---|---|
+| `order.placed` | Order Service | RabbitMQ | Notification Service | `{ orderId, customerId, restaurantId, items }` |
+| `order.confirmed` | Order Service | RabbitMQ | Notification Service | `{ orderId, status }` |
+| `order.status.updated` | Order Service | RabbitMQ | Notification Service | `{ orderId, status }` |
+| `driver.location.updated` | Driver Location Service | **Kafka** | Notification Service | `{ driverId, orderId, lat, lng, timestamp }` |
 
 ---
 
@@ -568,9 +626,9 @@ End-to-end flow from GPS ping to customer browser:
          │
 3. GEOADD drivers:active {lng} {lat} {driverId}     → Redis (~1ms)
          │
-4. Publish to RabbitMQ: driver.location.updated     → async
+4. Publish to Kafka: driver-location-events          → async, key=driverId
          │
-5. Notification Service consumes message
+5. Notification Service (Kafka consumer group) consumes message
          │
 6. Lookup: which order is driverId currently fulfilling?
          │
@@ -600,7 +658,8 @@ End-to-end flow from GPS ping to customer browser:
 │  Infrastructure:                                       │
 │  ├── PostgreSQL 16             (port 5432)             │
 │  ├── Redis 7                   (port 6379)             │
-│  └── RabbitMQ 3 (+ Management UI) (port 5672 / 15672) │
+│  ├── RabbitMQ 3 (+ Management UI) (port 5672 / 15672) │
+│  └── Kafka (KRaft mode)        (port 9092)             │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -628,10 +687,11 @@ Redis (single instance):
 | 500 orders/minute | ~8.3/sec | RabbitMQ decouples intake from processing; Postgres write capacity ~10K TPS | 1000x |
 | Menu P99 < 200ms | 200ms | Redis cache returns in ~5ms on hit; Postgres query ~100ms on miss | 40x on cache hit |
 | 10K concurrent drivers | 10,000 WebSocket connections | Node.js handles 10K+ WebSockets per instance; horizontal scaling via load balancer | 5x per instance |
-| 2,000 GPS events/sec | 2,000/sec | Redis handles 100K+ ops/sec; RabbitMQ handles 50K msg/sec | 25x |
+| 2,000 GPS events/sec | 2,000/sec | Kafka handles millions/sec; `driverId` partition key preserves per-driver ordering; disk-based log prevents data loss on consumer downtime | 500x+ |
 
 **Future scaling triggers:**
 - Shard PostgreSQL (read replicas) when read traffic exceeds single-node capacity
 - Redis Cluster when GPS fleet grows beyond 100,000 drivers
-- Migrate from RabbitMQ to Kafka when event volume exceeds 50,000/sec or event replay is required
+- Add Kafka partitions when GPS fleet grows beyond 50,000 concurrent drivers
+- Migrate order events from RabbitMQ to Kafka when event volume exceeds 50,000/sec or full event sourcing is introduced
 - Introduce CDN (Cloudflare/CloudFront) for menu responses to serve from edge nodes globally
